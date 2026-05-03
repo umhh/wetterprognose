@@ -1,0 +1,1138 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+<title>Radtour Wetteranalyse</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+  :root {
+    --bg: #f5f5f0; --card: #fff; --accent: #2563eb; --green: #16a34a;
+    --yellow: #ca8a04; --red: #dc2626; --gray: #6b7280;
+    --border: #e5e7eb; --text: #1f2937; --text2: #4b5563;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro', 'Helvetica Neue', sans-serif;
+    background: var(--bg); color: var(--text); padding: 12px;
+    -webkit-text-size-adjust: 100%;
+  }
+  h1 { font-size: 1.4em; text-align: center; padding: 12px 0 4px; }
+  .subtitle { text-align: center; color: var(--text2); font-size: 0.85em; margin-bottom: 12px; }
+  #status { text-align: center; padding: 8px; font-size: 0.85em; color: var(--accent); min-height: 2em; }
+
+  /* File input area */
+  .file-area {
+    background: var(--card); border-radius: 12px; padding: 16px; margin-bottom: 14px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08); text-align: center;
+  }
+  .file-area p { font-size: 0.85em; color: var(--text2); margin-bottom: 10px; }
+  .btn {
+    display: inline-block; padding: 10px 20px; border-radius: 8px; border: none;
+    font-size: 0.95em; font-weight: 600; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:active { background: #1d4ed8; }
+  .btn-export { background: #059669; color: #fff; margin-left: 8px; }
+  .btn-export:active { background: #047857; }
+  .btn:disabled { opacity: 0.5; cursor: default; }
+  #fileInput { display: none; }
+  .toolbar { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  #pasteInput {
+    width: 100%; margin: 8px 0; padding: 10px; border: 1px solid var(--border);
+    border-radius: 8px; font-family: monospace; font-size: 0.85em;
+    resize: vertical; background: var(--bg); line-height: 1.5;
+  }
+
+  /* Speed input */
+  .speed-row {
+    display: flex; justify-content: center; align-items: center; gap: 8px;
+    margin-top: 10px; font-size: 0.85em;
+  }
+  .speed-row input {
+    width: 50px; text-align: center; padding: 4px; border: 1px solid var(--border);
+    border-radius: 6px; font-size: 0.95em;
+  }
+
+  /* Cards */
+  .stage-card {
+    background: var(--card); border-radius: 12px; margin-bottom: 14px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08); overflow: hidden;
+  }
+  .stage-header {
+    padding: 12px 14px; cursor: pointer;
+    display: flex; justify-content: space-between; align-items: center;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .stage-header:active { background: #f0f0f0; }
+  .stage-title { font-weight: 600; font-size: 1.05em; }
+  .stage-date { color: var(--text2); font-size: 0.82em; }
+  .stage-summary { display: flex; gap: 8px; font-size: 0.8em; flex-wrap: wrap; margin-top: 4px; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 3px;
+    padding: 2px 8px; border-radius: 10px; font-weight: 500;
+  }
+  .pill-rain { background: #dbeafe; color: #1e40af; }
+  .pill-wind { background: #fef3c7; color: #92400e; }
+  .pill-temp { background: #fce7f3; color: #9d174d; }
+  .pill-hw-good { background: #d1fae5; color: #065f46; }
+  .pill-hw-neutral { background: #f3f4f6; color: #374151; }
+  .pill-hw-bad { background: #fee2e2; color: #991b1b; }
+  .pill-km { background: #e0e7ff; color: #3730a3; }
+  .chevron { transition: transform 0.2s; color: var(--gray); font-size: 1.2em; }
+  .stage-card.open .chevron { transform: rotate(90deg); }
+  .stage-body { display: none; padding: 0 10px 10px; }
+  .stage-card.open .stage-body { display: block; }
+  .stage-info {
+    display: flex; gap: 12px; padding: 6px 0 8px;
+    font-size: 0.8em; color: var(--text2); flex-wrap: wrap;
+  }
+
+  /* Table */
+  .tbl-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .hour-table { width: 100%; border-collapse: collapse; font-size: 0.78em; }
+  .hour-table th {
+    position: sticky; top: 0; background: var(--card); text-align: left;
+    padding: 6px 5px; border-bottom: 2px solid var(--border); font-weight: 600; white-space: nowrap;
+  }
+  .hour-table td { padding: 5px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .hour-table tr:last-child td { border-bottom: none; }
+  .hour-table tr.riding { background: #f0fdf4; }
+  .hour-table tr.not-riding { color: var(--gray); }
+  .bar { display: inline-block; height: 10px; border-radius: 3px; vertical-align: middle; }
+  .bar-rain { background: #3b82f6; }
+  .wind-arrow { display: inline-block; font-size: 1.1em; }
+  .headwind-pos { color: var(--red); font-weight: 600; }
+  .headwind-neg { color: var(--green); font-weight: 600; }
+  .rest-day { text-align: center; padding: 20px; color: var(--text2); font-style: italic; }
+
+  /* Summary */
+  .total-summary {
+    background: var(--card); border-radius: 12px; padding: 14px; margin-bottom: 14px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .total-summary h2 { font-size: 1em; margin-bottom: 8px; }
+  .total-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 8px; font-size: 0.85em;
+  }
+  .total-item { padding: 8px; background: var(--bg); border-radius: 8px; text-align: center; }
+  .total-item .val { font-size: 1.3em; font-weight: 700; }
+  .total-item .lbl { color: var(--text2); font-size: 0.82em; }
+  .legend {
+    margin-top: 8px; padding: 10px 14px; background: var(--card);
+    border-radius: 12px; font-size: 0.75em; color: var(--text2); line-height: 1.6;
+  }
+  .geocode-log { font-size: 0.75em; color: var(--text2); margin-top: 6px; }
+
+  /* Route map */
+  .map-toggle {
+    display: flex; align-items: center; gap: 6px; padding: 8px 0 4px;
+    font-size: 0.82em; color: var(--accent); cursor: pointer;
+    -webkit-tap-highlight-color: transparent; font-weight: 500;
+  }
+  .map-toggle:active { opacity: 0.7; }
+  .map-container { display: none; height: 250px; border-radius: 8px; margin: 4px 0 8px; overflow: hidden; }
+  .map-container.visible { display: block; }
+
+  @media (max-width: 600px) {
+    .hour-table { font-size: 0.72em; }
+    .hour-table th, .hour-table td { padding: 4px 3px; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Radtour Wetteranalyse</h1>
+<p class="subtitle">ECMWF IFS via Open-Meteo · Routing via BRouter · Geocoding via Nominatim</p>
+
+<div class="file-area">
+  <p>Etappen bearbeiten und Analyse starten</p>
+  <textarea id="pasteInput" rows="15"># Zielort, Abfahrtszeit dorthin (ohne Zeit = 10:00)
+# Gleicher Ort = Ruhetag
+start: Passau, 2026-05-05, 10:00
+Schlögen, 10:00
+Linz, 10:00
+Grein, 10:00
+Krems, 10:00
+Klosterneuburg, 10:00
+Wien, 10:00
+Wien
+Bratislava, 10:00
+Győr, 10:00
+Esztergom, 10:00
+Budapest, 10:00</textarea>
+  <div style="margin-top:8px;">
+    <label style="font-size:0.82em;color:var(--text2);">Vorlage:</label>
+    <select id="presetSelect" onchange="loadPreset()" style="padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-size:0.85em;background:var(--card);">
+      <option value="donau" selected>Donauradweg Passau → Budapest</option>
+      <option value="bourgogne">Tour de Bourgogne</option>
+      <option value="">— Eigene Etappen —</option>
+    </select>
+  </div>
+  <details style="margin-top:8px;font-size:0.78em;color:var(--text2);">
+    <summary>Format-Hilfe</summary>
+    <div style="margin-top:4px;line-height:1.6;">
+      <code>start: Ort, YYYY-MM-DD, HH:MM</code><br>
+      <code>Zielort, 10:00</code> — Abfahrtszeit dorthin<br>
+      <code>Zielort</code> — ohne Zeit = Standardzeit<br>
+      <code>Gleicher Ort</code> — Ruhetag<br>
+      <code># Kommentar</code> — wird ignoriert
+    </div>
+  </details>
+  <div class="toolbar">
+    <button class="btn btn-primary" onclick="startFromPaste()">Analyse starten</button>
+    <button class="btn btn-export" id="btnExport" disabled onclick="exportXLSX()">Excel exportieren</button>
+  </div>
+  <div class="speed-row">
+    <label>Durchschnitt:</label>
+    <input type="number" id="speedInput" value="15" min="5" max="40" step="1">
+    <span>km/h</span>
+  </div>
+  <details style="margin-top:10px;font-size:0.8em;color:var(--text2);">
+    <summary>Aus Datei laden</summary>
+    <input type="file" id="fileInput" accept=".txt,.csv,.tsv,text/plain,*/*" style="margin-top:8px;">
+  </details>
+</div>
+
+<div id="status"></div>
+<div id="summary"></div>
+<div id="stages"></div>
+<div class="legend" id="legend" style="display:none;">
+  <strong>Legende:</strong> GW = Gegenwind-Komponente entlang Fahrtrichtung (+ Gegenwind, − Rückenwind) ·
+  Grün hinterlegte Zeilen = aktive Fahrzeit · Windpfeil zeigt, wohin der Wind weht ·
+  Entfernungen: BRouter Fahrrad-Routing (echte Radwegstrecke) ·
+  Datenquelle: ECMWF IFS 0.25° via Open-Meteo · Geocoding: OpenStreetMap Nominatim
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+// ── Globals ───────────────────────────────────────────────────────────────
+let allResults = [];
+let parsedStages = [];
+const stageRoutes = {}; // mapId -> stage result with routePoints
+const stageMaps = {};   // mapId -> Leaflet map instance
+const WEEKDAYS = ['So','Mo','Di','Mi','Do','Fr','Sa'];
+const MONTHS = ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+
+// ── Tour Presets ─────────────────────────────────────────────────────────
+const PRESETS = {
+  donau: `# Zielort, Abfahrtszeit dorthin (ohne Zeit = 10:00)
+# Gleicher Ort = Ruhetag
+start: Passau, 2026-05-05, 10:00
+Schlögen, 10:00
+Linz, 10:00
+Grein, 10:00
+Krems, 10:00
+Klosterneuburg, 10:00
+Wien, 10:00
+Wien
+Bratislava, 10:00
+Győr, 10:00
+Esztergom, 10:00
+Budapest, 10:00`,
+  bourgogne: `# Zielort, Abfahrtszeit dorthin (ohne Zeit = 10:00)
+# Gleicher Ort = Ruhetag
+start: Venarey-les-Laumes, 2026-05-06, 10:00
+Pouilly-en-Auxois, 10:00
+Dijon, 10:00
+Beaune, 10:00
+Montchanin, 10:00
+Paray-le-Monial, 10:00
+Cronat, 10:00
+Cercy-la-Tour, 10:00
+Chitry-les-Mines, 10:00
+Mailly-le-Château, 10:00
+Migennes, 10:00
+Tonnerre, 10:00
+Montbard, 10:00
+Venarey-les-Laumes, 10:00`
+};
+
+function loadPreset() {
+  var sel = document.getElementById('presetSelect').value;
+  if (sel && PRESETS[sel]) {
+    document.getElementById('pasteInput').value = PRESETS[sel];
+  }
+}
+
+// ── File loading ──────────────────────────────────────────────────────────
+document.getElementById('fileInput').addEventListener('change', function(e) {
+  try {
+    var file = e.target.files[0];
+    if (!file) { setStatus('Keine Datei ausgewählt'); return; }
+    setStatus('Lese Datei: ' + file.name + ' (' + file.size + ' Bytes)…');
+    var reader = new FileReader();
+    reader.onload = function(evt) {
+      try {
+        var text = evt.target.result;
+        setStatus('Datei gelesen (' + text.length + ' Zeichen). Verarbeite…');
+        startWithText(text);
+      } catch(err) {
+        setStatus('Fehler beim Verarbeiten: ' + err.message);
+      }
+    };
+    reader.onerror = function() {
+      setStatus('Fehler beim Lesen der Datei: ' + reader.error);
+    };
+    reader.readAsText(file, 'UTF-8');
+  } catch(err) {
+    setStatus('Fehler: ' + err.message);
+  }
+});
+
+function startFromPaste() {
+  var text = document.getElementById('pasteInput').value;
+  if (!text.trim()) { setStatus('Bitte Etappen einfügen'); return; }
+  startWithText(text);
+}
+
+async function startWithText(text) {
+  try {
+    parsedStages = parseStages(text);
+    if (parsedStages.length === 0) {
+      setStatus('Keine gültigen Etappen gefunden. Prüfe Format: start: Ort, YYYY-MM-DD, HH:MM');
+      return;
+    }
+    // Show parsed summary for verification
+    const preview = parsedStages.map(s =>
+      `Tag ${s.day} ${s.date}: ${s.from} → ${s.rest ? 'Ruhetag' : s.to} ${fmtTime(s.startHour,s.startMin)}`
+    ).join(' · ');
+    setStatus(parsedStages.length + ' Etappen erkannt: ' + preview);
+    await sleep(800);
+    await processStages(parsedStages);
+  } catch(err) {
+    setStatus('Fehler: ' + err.message);
+  }
+}
+
+function parseStages(text) {
+  const lines = text.split(/\r?\n/);
+  const stages = [];
+  let startPlace = null, startDate = null;
+  let firstHour = 10, firstMin = 0;
+
+  // ── Line 1: "start: Ort, YYYY-MM-DD, HH:MM" ──
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    const m = line.match(/^start:\s*(.+?),\s*(\d{4}-\d{2}-\d{2})\s*(?:,\s*(\d{1,2}[\.:h]\d{2}|\d{1,2}))?\s*$/i);
+    if (m) {
+      startPlace = m[1].trim();
+      startDate = m[2];
+      if (m[3]) {
+        const tp = m[3].match(/(\d{1,2})[\.:h]?(\d{2})?/);
+        if (tp) { firstHour = parseInt(tp[1]); firstMin = parseInt(tp[2] || '0'); }
+      }
+      break;
+    }
+  }
+  if (!startPlace || !startDate) {
+    setStatus('Erste Zeile muss sein: start: Ortsname, YYYY-MM-DD, HH:MM');
+    return [];
+  }
+
+  // ── Folgende Zeilen: "Zielort, HH:MM" = Abfahrtszeit für diese Etappe ──
+  let currentPlace = startPlace;
+  let currentDate = new Date(startDate + 'T12:00:00');
+  let dayNum = 1;
+  let foundHeader = false;
+  const defaultHour = firstHour, defaultMin = firstMin;
+
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    if (!foundHeader && /^start:/i.test(line)) { foundHeader = true; continue; }
+
+    const commaIdx = line.indexOf(',');
+    const dest = commaIdx >= 0 ? line.substring(0, commaIdx).trim() : line.trim();
+    const timeRaw = commaIdx >= 0 ? line.substring(commaIdx + 1).trim() : '';
+    if (!dest) continue;
+
+    // Parse time flexibly: "10:00", "10.00", "10h00", "10h", "10", "8:30"
+    let startHour = defaultHour, startMin = defaultMin;
+    if (timeRaw) {
+      const tm = timeRaw.match(/^(\d{1,2})\s*[:\.h]\s*(\d{2})$/);
+      if (tm) { startHour = parseInt(tm[1]); startMin = parseInt(tm[2]); }
+      else {
+        const th = timeRaw.match(/^(\d{1,2})\s*h?$/);
+        if (th) { startHour = parseInt(th[1]); startMin = 0; }
+      }
+    }
+
+    const dateStr = currentDate.toISOString().slice(0, 10);
+    const isRest = dest.toLowerCase() === currentPlace.toLowerCase();
+
+    stages.push({
+      day: dayNum++,
+      date: dateStr,
+      from: currentPlace,
+      to: isRest ? currentPlace : dest,
+      startHour, startMin,
+      rest: isRest
+    });
+
+    if (!isRest) currentPlace = dest;
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+  return stages;
+}
+
+// ── Geocoding via Nominatim ───────────────────────────────────────────────
+const geocodeCache = {};
+
+async function geocode(place) {
+  if (geocodeCache[place]) return geocodeCache[place];
+  const q = encodeURIComponent(place);
+  // Nominatim requires identification: use email param (User-Agent is a forbidden header in browsers)
+  const url = `https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1&accept-language=de&email=radtour-wetter-app@users.noreply.github.com`;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const r = await fetch(url);
+      if (r.status === 429) {
+        setStatus(`Nominatim Rate-Limit, warte ${attempt * 2}s…`);
+        await sleep(attempt * 2000);
+        continue;
+      }
+      if (!r.ok) {
+        setStatus(`Geocoding HTTP ${r.status} für "${place}" — Versuch ${attempt}/3`);
+        await sleep(1000);
+        continue;
+      }
+      const data = await r.json();
+      if (data.length > 0) {
+        const coord = [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+        geocodeCache[place] = coord;
+        return coord;
+      } else {
+        setStatus(`Ort nicht gefunden: "${place}" — Schreibweise prüfen`);
+        return null;
+      }
+    } catch (e) {
+      console.error('Geocoding error:', place, e);
+      setStatus(`Netzwerkfehler Geocoding "${place}": ${e.message} — Versuch ${attempt}/3`);
+      await sleep(1500);
+    }
+  }
+  setStatus(`Geocoding fehlgeschlagen für "${place}" nach 3 Versuchen`);
+  return null;
+}
+
+// ── Geometry ──────────────────────────────────────────────────────────────
+function haversineKm(a, b) {
+  const R = 6371;
+  const dLat = (b[0]-a[0]) * Math.PI/180;
+  const dLon = (b[1]-a[1]) * Math.PI/180;
+  const la = a[0]*Math.PI/180, lb = b[0]*Math.PI/180;
+  const h = Math.sin(dLat/2)**2 + Math.cos(la)*Math.cos(lb)*Math.sin(dLon/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+function bearingDeg(a, b) {
+  const [lat1,lon1] = a.map(x => x*Math.PI/180);
+  const [lat2,lon2] = b.map(x => x*Math.PI/180);
+  const dlon = lon2-lon1;
+  const x = Math.sin(dlon)*Math.cos(lat2);
+  const y = Math.cos(lat1)*Math.sin(lat2) - Math.sin(lat1)*Math.cos(lat2)*Math.cos(dlon);
+  return (Math.atan2(x,y)*180/Math.PI+360)%360;
+}
+
+function interpolateCoord(a, b, frac) {
+  return [a[0]+(b[0]-a[0])*frac, a[1]+(b[1]-a[1])*frac];
+}
+
+function headwindComp(ws, wdFrom, tBear) {
+  return ws * Math.cos((wdFrom - tBear)*Math.PI/180);
+}
+
+function compass(deg) {
+  const d = ["N","NNO","NO","ONO","O","OSO","SO","SSO","S","SSW","SW","WSW","W","WNW","NW","NNW"];
+  return d[Math.round(deg/22.5)%16];
+}
+
+function fmtDate(ds) {
+  const d = new Date(ds+'T12:00:00');
+  return `${WEEKDAYS[d.getDay()]}, ${d.getDate()}.${d.getMonth()+1}.`;
+}
+
+function fmtTime(h, m) {
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+}
+
+// ── BRouter Routing ──────────────────────────────────────────────────────
+let cachedProfile = null;
+
+// Splittet eine BRouter-Gesamtroute an Via-Punkten in Segmente
+function splitRouteAtWaypoints(allCoords, waypoints) {
+  // allCoords: [[lon, lat, elev], ...] — vollständige Route
+  // waypoints: [{lat, lon}, ...] — die Via-Punkte (Start, Ziel1, Ziel2, ...)
+  const splitIndices = [0];
+  let searchFrom = 0;
+
+  for (let w = 1; w < waypoints.length; w++) {
+    const wp = waypoints[w];
+    let bestIdx = searchFrom;
+    let bestDist = Infinity;
+    for (let c = searchFrom + 1; c < allCoords.length; c++) {
+      const dLat = allCoords[c][1] - wp.lat;
+      const dLon = allCoords[c][0] - wp.lon;
+      const dist = dLat * dLat + dLon * dLon;
+      if (dist < bestDist) { bestDist = dist; bestIdx = c; }
+      if (dist > bestDist * 4 && bestDist < 0.001) break;
+    }
+    splitIndices.push(bestIdx);
+    searchFrom = bestIdx;
+  }
+
+  const segments = [];
+  for (let s = 0; s < splitIndices.length - 1; s++) {
+    const from = splitIndices[s];
+    const to = splitIndices[s + 1];
+    const segCoords = allCoords.slice(from, to + 1);
+    const routePoints = [];
+    let cumDist = 0;
+    routePoints.push({ lat: segCoords[0][1], lon: segCoords[0][0], cumKm: 0 });
+    for (let i = 1; i < segCoords.length; i++) {
+      const prev = segCoords[i - 1];
+      const cur = segCoords[i];
+      cumDist += haversineKm([prev[1], prev[0]], [cur[1], cur[0]]);
+      routePoints.push({ lat: cur[1], lon: cur[0], cumKm: cumDist });
+    }
+    segments.push({ km: Math.round(cumDist * 10) / 10, routePoints });
+  }
+  return segments;
+}
+
+async function getBRouterProfile() {
+  if (cachedProfile) return cachedProfile;
+  try {
+    // GitHub raw hat CORS-Support, brouter.de/profiles2 nicht
+    const r = await fetch('https://raw.githubusercontent.com/abrensch/brouter/master/misc/profiles2/trekking.brf');
+    if (!r.ok) { console.warn('Profil-Download fehlgeschlagen:', r.status); return null; }
+    let profile = await r.text();
+    // Flags aktivieren
+    const hadRiver = /consider_river\s*=\s*false/i.test(profile);
+    const hadCycle = /stick_to_cycleroutes\s*=\s*(false|0)\b/i.test(profile);
+    profile = profile.replace(/assign\s+consider_river\s*=\s*false/gi, 'assign consider_river = true');
+    profile = profile.replace(/assign\s+stick_to_cycleroutes\s*=\s*(false|0)\b/gi, 'assign stick_to_cycleroutes = true');
+    const nowRiver = /consider_river\s*=\s*true/i.test(profile);
+    const nowCycle = /stick_to_cycleroutes\s*=\s*true/i.test(profile);
+    console.log(`Profil-Patches: river ${hadRiver}→${nowRiver}, cycleroutes ${hadCycle}→${nowCycle}`);
+    cachedProfile = profile;
+    console.log('BRouter-Profil geladen, consider_river + stick_to_cycleroutes aktiviert');
+    return profile;
+  } catch (e) {
+    console.warn('Profil-Download fehlgeschlagen, nutze Standard-Profil:', e.message);
+    return null;
+  }
+}
+
+async function fetchRoute(startCoord, endCoord) {
+  const lonlats = `${startCoord[1].toFixed(6)},${startCoord[0].toFixed(6)}|${endCoord[1].toFixed(6)},${endCoord[0].toFixed(6)}`;
+  const profile = await getBRouterProfile();
+
+  let r;
+  let routeMethod = 'standard';
+  if (profile) {
+    const url = `https://brouter.de/brouter?lonlats=${lonlats}&alternativeidx=0&format=geojson`;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        r = await fetch(url, { method: 'POST', body: profile });
+        if (r.ok) {
+          routeMethod = 'custom';
+          break;
+        } else {
+          const errText = await r.text().catch(() => '');
+          console.warn(`BRouter POST Versuch ${attempt}/3 fehlgeschlagen:`, r.status, errText);
+          r = null;
+          if (attempt < 3) await new Promise(ok => setTimeout(ok, 2000 * attempt));
+        }
+      } catch (e) {
+        console.warn(`BRouter POST Versuch ${attempt}/3 Netzwerkfehler:`, e.message);
+        r = null;
+        if (attempt < 3) await new Promise(ok => setTimeout(ok, 2000 * attempt));
+      }
+    }
+  }
+  if (!r) {
+    // Fallback: GET mit Standard-Profil
+    const url = `https://brouter.de/brouter?lonlats=${lonlats}&profile=trekking&alternativeidx=0&format=geojson`;
+    r = await fetch(url);
+  }
+  if (!r.ok) throw new Error(`BRouter ${r.status}`);
+  const gj = await r.json();
+
+  const feature = gj.features[0];
+  const totalM = feature.properties['track-length']; // meters
+  const totalKm = Math.round(totalM / 100) / 10; // 1 decimal
+
+  // Extract route geometry: GeoJSON coords are [lon, lat, elevation]
+  const coords = feature.geometry.coordinates;
+
+  // Build cumulative distance along route, sample points
+  const routePoints = [];
+  let cumDist = 0;
+  routePoints.push({ lat: coords[0][1], lon: coords[0][0], cumKm: 0 });
+
+  for (let i = 1; i < coords.length; i++) {
+    const prev = coords[i-1];
+    const cur = coords[i];
+    const segKm = haversineKm([prev[1], prev[0]], [cur[1], cur[0]]);
+    cumDist += segKm;
+    routePoints.push({ lat: cur[1], lon: cur[0], cumKm: cumDist });
+  }
+
+  // Normalize cumKm to match the actual BRouter total (haversine can drift slightly)
+  const scale = totalKm / cumDist;
+  routePoints.forEach(p => p.cumKm *= scale);
+
+  return { km: totalKm, routePoints, routeMethod };
+}
+
+// Find the point along the route at a given km distance
+function pointAtKm(routePoints, targetKm) {
+  if (targetKm <= 0) return { lat: routePoints[0].lat, lon: routePoints[0].lon };
+  const last = routePoints[routePoints.length - 1];
+  if (targetKm >= last.cumKm) return { lat: last.lat, lon: last.lon };
+
+  // Binary search for the segment
+  let lo = 0, hi = routePoints.length - 1;
+  while (lo < hi - 1) {
+    const mid = (lo + hi) >> 1;
+    if (routePoints[mid].cumKm <= targetKm) lo = mid; else hi = mid;
+  }
+  const a = routePoints[lo], b = routePoints[hi];
+  const frac = (targetKm - a.cumKm) / (b.cumKm - a.cumKm || 1);
+  return {
+    lat: a.lat + (b.lat - a.lat) * frac,
+    lon: a.lon + (b.lon - a.lon) * frac,
+  };
+}
+
+// Get the local bearing at a given km (direction of travel)
+function bearingAtKm(routePoints, targetKm) {
+  const margin = 0.5; // look 500m ahead/behind for bearing
+  const p1 = pointAtKm(routePoints, Math.max(0, targetKm - margin));
+  const p2 = pointAtKm(routePoints, targetKm + margin);
+  return bearingDeg([p1.lat, p1.lon], [p2.lat, p2.lon]);
+}
+
+// ── Weather API ───────────────────────────────────────────────────────────
+async function fetchWeather(lat, lon) {
+  const url = `https://api.open-meteo.com/v1/ecmwf?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}` +
+    `&hourly=temperature_2m,precipitation,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m` +
+    `&timezone=Europe/Berlin&forecast_days=16&models=ecmwf_ifs025`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`API ${r.status}`);
+  return r.json();
+}
+
+function wxIcon(code) {
+  if (code == null) return '';
+  if (code <= 1) return '☀️'; if (code <= 3) return '⛅';
+  if (code <= 48) return '☁️'; if (code <= 57) return '🌦️';
+  if (code <= 67) return '🌧️'; if (code <= 77) return '❄️';
+  if (code <= 86) return '🌨️'; if (code >= 95) return '⛈️';
+  return '🌤️';
+}
+
+// ── Stage analysis (route-aware) ──────────────────────────────────────────
+// weatherMap: { "lat,lon" -> hourlyData } — may contain multiple fetch points
+function analyseStage(stage, weatherMap) {
+  const { date, km, startCoord, endCoord, startHour, startMin, rest, routePoints } = stage;
+  const speed = parseFloat(document.getElementById('speedInput').value) || 15;
+  const overallBearing = bearingDeg(startCoord, endCoord);
+  const ridingHours = km / speed;
+  const startFrac = startHour + startMin/60;
+  const endFrac = startFrac + ridingHours;
+
+  // Pick the best weather data for a given point from the weatherMap
+  function getWeatherAt(lat, lon) {
+    let bestKey = null, bestDist = Infinity;
+    for (const key of Object.keys(weatherMap)) {
+      const [wLat, wLon] = key.split(',').map(Number);
+      const d = haversineKm([lat, lon], [wLat, wLon]);
+      if (d < bestDist) { bestDist = d; bestKey = key; }
+    }
+    return weatherMap[bestKey];
+  }
+
+  const rows = [];
+  let totRain=0, rainHrs=0, winds=[], gusts=[], hws=[], temps=[];
+
+  // We need time indices — use first weather dataset for time array
+  const firstKey = Object.keys(weatherMap)[0];
+  const refH = weatherMap[firstKey].hourly;
+  const times = refH.time;
+
+  for (let i = 0; i < times.length; i++) {
+    if (!times[i].startsWith(date)) continue;
+    const hr = parseInt(times[i].substring(11,13));
+    if (hr < 6 || hr > 21) continue;
+
+    const isRiding = !rest && km > 0 && hr >= startHour && hr < Math.ceil(endFrac);
+    let kmDone = 0, localBearing = overallBearing, posLat = startCoord[0], posLon = startCoord[1];
+
+    if (isRiding && km > 0 && routePoints) {
+      const elapsed = Math.max(0, hr - startFrac);
+      kmDone = Math.min(elapsed * speed, km);
+      const pos = pointAtKm(routePoints, kmDone);
+      posLat = pos.lat; posLon = pos.lon;
+      localBearing = bearingAtKm(routePoints, kmDone);
+    }
+
+    // Get weather from nearest fetched point
+    const wx = getWeatherAt(posLat, posLon);
+    const wh = wx.hourly;
+    // Find matching time index in this dataset
+    const ti = wh.time.indexOf(times[i]);
+    if (ti < 0) continue;
+
+    const hw = km > 0 ? headwindComp(wh.wind_speed_10m[ti], wh.wind_direction_10m[ti], localBearing) : 0;
+    const row = {
+      hour: hr, time: `${String(hr).padStart(2,'0')}:00`,
+      temp: wh.temperature_2m[ti], rain: wh.precipitation[ti]||0,
+      wcode: wh.weather_code ? wh.weather_code[ti] : null,
+      wind: wh.wind_speed_10m[ti], windDir: wh.wind_direction_10m[ti],
+      gust: wh.wind_gusts_10m[ti],
+      headwind: Math.round(hw*10)/10,
+      isRiding, kmDone: Math.round(kmDone*10)/10,
+      kmRemain: Math.round((km-kmDone)*10)/10,
+      localBearing: Math.round(localBearing),
+      posLat: Math.round(posLat*1000)/1000,
+      posLon: Math.round(posLon*1000)/1000,
+    };
+    rows.push(row);
+
+    if (isRiding) {
+      totRain += row.rain; if (row.rain >= 0.2) rainHrs++;
+      winds.push(row.wind); gusts.push(row.gust); hws.push(row.headwind); temps.push(row.temp);
+    }
+  }
+
+  const avg = arr => arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : 0;
+  const arrHr = Math.floor(endFrac);
+  const arrMin = Math.round((endFrac - arrHr) * 60);
+
+  return {
+    ...stage, travelBearing: overallBearing, ridingHours: Math.round(ridingHours*10)/10,
+    arrivalTime: fmtTime(arrHr, arrMin), rows,
+    totalRain: Math.round(totRain*10)/10, rainHrs,
+    avgWind: Math.round(avg(winds)), maxGust: gusts.length ? Math.round(Math.max(...gusts)) : 0,
+    avgHW: Math.round(avg(hws)*10)/10,
+    minTemp: temps.length ? Math.round(Math.min(...temps)) : 0,
+    maxTemp: temps.length ? Math.round(Math.max(...temps)) : 0,
+  };
+}
+
+// ── Main processing ───────────────────────────────────────────────────────
+async function processStages(stages) {
+  const stagesEl = document.getElementById('stages');
+  const summaryEl = document.getElementById('summary');
+  stagesEl.innerHTML = ''; summaryEl.innerHTML = '';
+  allResults = [];
+  document.getElementById('btnExport').disabled = true;
+
+  // Step 0: Determine today to skip past stages
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Step 1: Geocode only places needed for today + future stages
+  const places = new Set();
+  stages.forEach(s => {
+    if (s.date < today) return; // skip past
+    places.add(s.from);
+    if (!s.rest) places.add(s.to);
+  });
+
+  const coords = {};
+  let geoIdx = 0;
+  for (const p of places) {
+    geoIdx++;
+    setStatus(`Geocoding ${geoIdx}/${places.size}: ${p}…`);
+    const c = await geocode(p);
+    if (c) { coords[p] = c; }
+    else { setStatus(`Ort nicht gefunden: "${p}" — bitte Schreibweise prüfen`); return; }
+    await sleep(600); // Nominatim rate limit: 1 req/sec
+  }
+
+  // Step 2: Route with BRouter — EIN Request für alle Etappen
+  setStatus('BRouter-Profil laden (consider_river, stick_to_cycleroutes)…');
+  const profile = await getBRouterProfile();
+  if (profile) {
+    setStatus('Custom-Profil geladen ✓ — starte Batch-Routing…');
+  } else {
+    setStatus('⚠ Custom-Profil nicht verfügbar — Standard-Routing…');
+  }
+  await sleep(1000);
+
+  // Alle Wegpunkte für nicht-vergangene, nicht-Ruhe-Etappen sammeln
+  const ridingStages = [];
+  const waypointCoords = []; // [{lat,lon}] — geordnete Via-Punkte
+  const enriched = [];
+
+  for (let i = 0; i < stages.length; i++) {
+    const s = stages[i];
+    if (s.date < today) {
+      enriched.push({ ...s, past: true, startCoord: null, endCoord: null, km: 0, routePoints: null, routeMethod: '' });
+      continue;
+    }
+    const sc = coords[s.from];
+    const ec = s.rest ? sc : coords[s.to];
+    if (s.rest) {
+      enriched.push({ ...s, startCoord: sc, endCoord: ec, km: 0, routePoints: null, routeMethod: '' });
+      continue;
+    }
+    // Wegpunkt für diese Etappe
+    if (waypointCoords.length === 0) waypointCoords.push({ lat: sc[0], lon: sc[1] });
+    waypointCoords.push({ lat: ec[0], lon: ec[1] });
+    ridingStages.push({ idx: i, stage: s, sc, ec });
+  }
+
+  // Batch-Request: alle Wegpunkte als |-getrennte Liste
+  let batchRouteMethod = 'standard';
+  let segmentResults = null;
+
+  if (waypointCoords.length >= 2) {
+    const lonlats = waypointCoords.map(w => `${w.lon.toFixed(6)},${w.lat.toFixed(6)}`).join('|');
+    setStatus(`Batch-Routing: ${waypointCoords.length} Wegpunkte…`);
+
+    let r = null;
+    if (profile) {
+      try {
+        const url = `https://brouter.de/brouter?lonlats=${lonlats}&alternativeidx=0&format=geojson`;
+        r = await fetch(url, { method: 'POST', body: profile });
+        if (r.ok) {
+          batchRouteMethod = 'custom';
+          console.log('BRouter Batch-POST erfolgreich (custom Profil)');
+        } else {
+          console.warn('BRouter Batch-POST fehlgeschlagen:', r.status);
+          r = null;
+        }
+      } catch (e) {
+        console.warn('BRouter Batch-POST Netzwerkfehler:', e.message);
+        r = null;
+      }
+    }
+    if (!r) {
+      const url = `https://brouter.de/brouter?lonlats=${lonlats}&profile=trekking&alternativeidx=0&format=geojson`;
+      r = await fetch(url);
+      if (!r.ok) console.warn('BRouter Batch-GET auch fehlgeschlagen:', r.status);
+    }
+
+    if (r && r.ok) {
+      const gj = await r.json();
+      const allCoords = gj.features[0].geometry.coordinates; // [lon, lat, elev]
+
+      // Route an Via-Punkten aufteilen
+      segmentResults = splitRouteAtWaypoints(allCoords, waypointCoords);
+      setStatus(`Batch-Routing ✓ [${batchRouteMethod}] — ${ridingStages.length} Etappen`);
+      await sleep(1000);
+    }
+  }
+
+  // Ergebnisse den Etappen zuordnen
+  let segIdx = 0;
+  for (const rs of ridingStages) {
+    const s = rs.stage;
+    if (segmentResults && segIdx < segmentResults.length) {
+      const seg = segmentResults[segIdx++];
+      enriched.push({ ...s, startCoord: rs.sc, endCoord: rs.ec, km: seg.km, routePoints: seg.routePoints, routeMethod: batchRouteMethod });
+    } else {
+      // Fallback: Luftlinie
+      const airKm = haversineKm(rs.sc, rs.ec);
+      const km = Math.round(airKm * 1.35 * 10) / 10;
+      enriched.push({ ...s, startCoord: rs.sc, endCoord: rs.ec, km, routePoints: null, routeMethod: 'luftlinie' });
+    }
+  }
+
+  // enriched nach day sortieren (Reihenfolge wiederherstellen)
+  enriched.sort((a, b) => a.day - b.day);
+
+  // Step 3: Fetch weather (nur heute + Zukunft)
+  let firstFutureShown = false;
+  for (let i = 0; i < enriched.length; i++) {
+    const s = enriched[i];
+
+    if (s.past) {
+      // Vergangene Etappe: kein Wetter, nur Platzhalter-Karte
+      const res = { ...s, travelBearing: 0, ridingHours: 0, arrivalTime: '', rows: [],
+        totalRain: 0, rainHrs: 0, avgWind: 0, maxGust: 0, avgHW: 0, minTemp: 0, maxTemp: 0 };
+      allResults.push(res);
+      stagesEl.appendChild(renderStage(res, false));
+      continue;
+    }
+
+    setStatus(`Wetter laden ${i+1}/${enriched.length}: ${s.from} → ${s.to}…`);
+    try {
+      const weatherMap = {};
+
+      if (s.rest || !s.routePoints) {
+        // Rest day or no route: single point
+        const data = await fetchWeather(s.startCoord[0], s.startCoord[1]);
+        weatherMap[`${s.startCoord[0]},${s.startCoord[1]}`] = data;
+      } else {
+        // Fetch weather at start, 1/3, 2/3 and end of route for accuracy
+        const sampleFracs = s.km <= 40 ? [0, 1] : s.km <= 80 ? [0, 0.5, 1] : [0, 0.33, 0.67, 1];
+        for (const frac of sampleFracs) {
+          const targetKm = frac * s.km;
+          const pt = pointAtKm(s.routePoints, targetKm);
+          const key = `${pt.lat.toFixed(4)},${pt.lon.toFixed(4)}`;
+          if (!weatherMap[key]) {
+            const data = await fetchWeather(pt.lat, pt.lon);
+            weatherMap[key] = data;
+            await sleep(200);
+          }
+        }
+      }
+
+      const res = analyseStage(s, weatherMap);
+      allResults.push(res);
+      const autoOpen = !firstFutureShown;
+      firstFutureShown = true;
+      stagesEl.appendChild(renderStage(res, autoOpen));
+    } catch (e) {
+      console.error(`Fehler Tag ${s.day}:`, e);
+      const card = document.createElement('div');
+      card.className = 'stage-card';
+      card.innerHTML = `<div class="stage-header"><div class="stage-title">Tag ${s.day}: ${s.from} → ${s.to} — ${e.message}</div></div>`;
+      stagesEl.appendChild(card);
+    }
+    if (i < enriched.length - 1) await sleep(300);
+  }
+
+  renderSummary(allResults);
+  document.getElementById('legend').style.display = '';
+  document.getElementById('btnExport').disabled = false;
+
+  const now = new Date();
+  setStatus(`Fertig — ${now.toLocaleDateString('de-DE')} ${now.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})} Uhr · Echte Radweg-Entfernungen via BRouter`);
+}
+
+// ── Rendering ─────────────────────────────────────────────────────────────
+function renderStage(res, autoOpen) {
+  const card = document.createElement('div');
+  card.className = 'stage-card' + (autoOpen ? ' open' : '');
+
+  if (res.past) {
+    card.style.opacity = '0.5';
+    card.innerHTML = `
+      <div class="stage-header" onclick="this.parentElement.classList.toggle('open')">
+        <div>
+          <div class="stage-title">Tag ${res.day}: ${res.from}${res.rest ? ' — Ruhetag' : ' → ' + res.to}</div>
+          <div class="stage-date">${fmtDate(res.date)} · vergangen</div>
+        </div><span class="chevron">›</span>
+      </div>
+      <div class="stage-body"><div class="rest-day">Vergangene Etappe — keine Daten abgerufen</div></div>`;
+    return card;
+  }
+
+  if (res.rest) {
+    card.innerHTML = `
+      <div class="stage-header" onclick="this.parentElement.classList.toggle('open')">
+        <div>
+          <div class="stage-title">Tag ${res.day}: ${res.from} — Ruhetag</div>
+          <div class="stage-date">${fmtDate(res.date)}</div>
+        </div><span class="chevron">›</span>
+      </div>
+      <div class="stage-body">
+        ${res.rows.length ? hourTableHTML(res, true) : '<div class="rest-day">Ruhetag</div>'}
+      </div>`;
+    return card;
+  }
+
+  const mapId = `map-${res.day}`;
+  const hasRoute = res.routePoints && res.routePoints.length > 1;
+  const [hwCls, hwTxt] = hwPill(res.avgHW);
+  card.innerHTML = `
+    <div class="stage-header" onclick="this.parentElement.classList.toggle('open')">
+      <div>
+        <div class="stage-title">Tag ${res.day}: ${res.from} → ${res.to}</div>
+        <div class="stage-date">${fmtDate(res.date)} · Start ${fmtTime(res.startHour,res.startMin)} · Ankunft ~${res.arrivalTime}</div>
+        <div class="stage-summary">
+          <span class="pill pill-km">${res.km} km · ${res.ridingHours}h</span>
+          <span class="pill pill-temp">${res.minTemp}–${res.maxTemp}°C</span>
+          <span class="pill pill-rain">${res.totalRain} mm${res.rainHrs>0?' / '+res.rainHrs+'h':''}</span>
+          <span class="pill pill-wind">Ø${res.avgWind} (${res.maxGust}) km/h</span>
+          <span class="pill ${hwCls}">${hwTxt}</span>
+          ${res.routeMethod === 'custom' ? '<span class="pill" style="background:#dbeafe;color:#1d4ed8;font-size:0.7em">🚲 Radweg</span>' : ''}
+        </div>
+      </div><span class="chevron">›</span>
+    </div>
+    <div class="stage-body">
+      ${hasRoute ? `<div class="map-toggle" onclick="toggleMap('${mapId}')">▶ Karte anzeigen</div>
+      <div class="map-container" id="${mapId}"></div>` : ''}
+      <div class="stage-info">
+        <span>Richtung: ${compass(res.travelBearing)} (${Math.round(res.travelBearing)}°)</span>
+        <span>Coords: ${res.startCoord[0].toFixed(2)},${res.startCoord[1].toFixed(2)} → ${res.endCoord[0].toFixed(2)},${res.endCoord[1].toFixed(2)}</span>
+      </div>
+      ${hourTableHTML(res, false)}
+    </div>`;
+  if (hasRoute) stageRoutes[mapId] = res;
+  return card;
+}
+
+function hourTableHTML(res, isRest) {
+  let h = `<div class="tbl-wrap"><table class="hour-table"><thead><tr>
+    <th>Zeit</th><th></th><th>°C</th><th>Regen</th>
+    ${!isRest?'<th>km</th><th>Rest</th><th>Richtung</th>':''}
+    <th>Wind</th><th>Böen</th><th></th>
+    ${!isRest?'<th>GW</th>':''}
+  </tr></thead><tbody>`;
+  for (const r of res.rows) {
+    const cls = r.isRiding ? 'riding' : 'not-riding';
+    const rain = r.rain > 0 ? `<span class="bar bar-rain" style="width:${Math.min(r.rain*8,60)}px"></span> ${r.rain}` : '—';
+    const arrow = (r.windDir+180)%360;
+    const hwC = r.headwind>2?'headwind-pos':r.headwind<-2?'headwind-neg':'';
+    const hwV = r.headwind>0?`+${r.headwind}`:`${r.headwind}`;
+    const dirTxt = r.isRiding && r.localBearing != null ? compass(r.localBearing) : '—';
+    h += `<tr class="${cls}">
+      <td>${r.time}</td><td>${wxIcon(r.wcode)}</td>
+      <td>${r.temp!=null?Math.round(r.temp*10)/10:'—'}°</td><td>${rain}</td>
+      ${!isRest?`<td>${r.isRiding?r.kmDone:'—'}</td><td>${r.isRiding?r.kmRemain:'—'}</td><td>${dirTxt}</td>`:''}
+      <td>${Math.round(r.wind)}</td><td>${Math.round(r.gust)}</td>
+      <td><span class="wind-arrow" style="transform:rotate(${arrow}deg)">↑</span> ${compass(r.windDir)}</td>
+      ${!isRest?`<td class="${hwC}">${r.isRiding?hwV:'—'}</td>`:''}
+    </tr>`;
+  }
+  return h + '</tbody></table></div>';
+}
+
+function hwPill(avg) {
+  if (avg < -5) return ['pill-hw-good', `Rückenwind ${Math.abs(avg)}`];
+  if (avg < 3)  return ['pill-hw-neutral', 'Wind neutral'];
+  if (avg < 12) return ['pill-hw-bad', `Gegenwind ${avg}`];
+  return ['pill-hw-bad', `Starker GW ${avg}`];
+}
+
+function renderSummary(results) {
+  const riding = results.filter(r => !r.rest && !r.past);
+  if (!riding.length) return;
+  const totKm = riding.reduce((s,r)=>s+r.km,0);
+  const totRain = riding.reduce((s,r)=>s+r.totalRain,0);
+  const rainDays = riding.filter(r=>r.totalRain>=1).length;
+  const avgHW = riding.reduce((s,r)=>s+r.avgHW,0)/riding.length;
+  const minT = Math.min(...riding.map(r=>r.minTemp));
+  const maxT = Math.max(...riding.map(r=>r.maxTemp));
+  const totH = riding.reduce((s,r)=>s+r.ridingHours,0);
+  document.getElementById('summary').innerHTML = `
+    <div class="total-summary"><h2>Gesamtübersicht</h2>
+    <div class="total-grid">
+      <div class="total-item"><div class="val">${totKm} km</div><div class="lbl">Strecke</div></div>
+      <div class="total-item"><div class="val">${Math.round(totH)}h</div><div class="lbl">Fahrzeit</div></div>
+      <div class="total-item"><div class="val">${minT}–${maxT}°C</div><div class="lbl">Temperatur</div></div>
+      <div class="total-item"><div class="val">${Math.round(totRain)} mm</div><div class="lbl">Regen</div></div>
+      <div class="total-item"><div class="val">${rainDays}/${riding.length}</div><div class="lbl">Regentage</div></div>
+      <div class="total-item"><div class="val">${avgHW>0?'+':''}${Math.round(avgHW)}</div><div class="lbl">Ø GW km/h</div></div>
+    </div></div>`;
+}
+
+// ── XLSX Export ────────────────────────────────────────────────────────────
+function exportXLSX() {
+  if (!allResults.length || typeof XLSX === 'undefined') return;
+  const wb = XLSX.utils.book_new();
+
+  // Sheet 1: Übersicht
+  const s1data = [['Tag','Datum','Von','Nach','km','Fahrzeit h','Start','Ankunft',
+    'Richtung','Regen mm','Regenstd.','Temp min °C','Temp max °C',
+    'Wind Ø km/h','Böen max','GW Ø km/h']];
+  for (const r of allResults) {
+    s1data.push([r.day, r.date, r.from, r.to, r.km, r.ridingHours,
+      r.rest ? '' : fmtTime(r.startHour,r.startMin), r.rest ? '' : r.arrivalTime,
+      r.rest ? '' : compass(r.travelBearing),
+      r.totalRain, r.rainHrs, r.minTemp, r.maxTemp,
+      r.avgWind, r.maxGust, r.avgHW]);
+  }
+  const ws1 = XLSX.utils.aoa_to_sheet(s1data);
+  // Column widths
+  ws1['!cols'] = [
+    {wch:4},{wch:11},{wch:18},{wch:18},{wch:5},{wch:8},{wch:6},{wch:8},
+    {wch:8},{wch:9},{wch:9},{wch:10},{wch:10},{wch:12},{wch:9},{wch:10}
+  ];
+  XLSX.utils.book_append_sheet(wb, ws1, 'Übersicht');
+
+  // Sheet 2: Stundenwerte
+  const s2data = [['Tag','Datum','Von','Nach','Stunde','°C','Regen mm',
+    'Wind km/h','Windrichtung','Böen km/h','Fahrtrichtung','GW km/h',
+    'km gefahren','km Rest','Position Lat','Position Lon','Fahrzeit']];
+  for (const r of allResults) {
+    for (const h of r.rows) {
+      s2data.push([r.day, r.date, r.from, r.to, h.time,
+        h.temp != null ? Math.round(h.temp*10)/10 : '',
+        Math.round(h.rain*10)/10, Math.round(h.wind), compass(h.windDir),
+        Math.round(h.gust),
+        h.isRiding && h.localBearing != null ? compass(h.localBearing) : '',
+        h.isRiding ? h.headwind : '',
+        h.isRiding ? h.kmDone : '', h.isRiding ? h.kmRemain : '',
+        h.isRiding && h.posLat ? h.posLat : '',
+        h.isRiding && h.posLon ? h.posLon : '',
+        h.isRiding ? 'Ja' : '']);
+    }
+  }
+  const ws2 = XLSX.utils.aoa_to_sheet(s2data);
+  ws2['!cols'] = [
+    {wch:4},{wch:11},{wch:18},{wch:18},{wch:6},{wch:5},{wch:9},
+    {wch:9},{wch:12},{wch:9},{wch:12},{wch:8},{wch:10},{wch:8},{wch:10},{wch:10},{wch:8}
+  ];
+  XLSX.utils.book_append_sheet(wb, ws2, 'Stundenwerte');
+
+  // Filename: Planung-DD.MM.-HH:MM.xlsx
+  const now = new Date();
+  const dd = String(now.getDate()).padStart(2,'0');
+  const mm = String(now.getMonth()+1).padStart(2,'0');
+  const hh = String(now.getHours()).padStart(2,'0');
+  const mi = String(now.getMinutes()).padStart(2,'0');
+  const fname = `Planung-${dd}.${mm}.-${hh}:${mi}.xlsx`;
+
+  XLSX.writeFile(wb, fname);
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+
+function toggleMap(mapId) {
+  const container = document.getElementById(mapId);
+  const toggle = container.previousElementSibling;
+  const isVisible = container.classList.contains('visible');
+
+  if (isVisible) {
+    container.classList.remove('visible');
+    toggle.textContent = '▶ Karte anzeigen';
+    if (stageMaps[mapId]) { stageMaps[mapId].remove(); delete stageMaps[mapId]; }
+    return;
+  }
+
+  container.classList.add('visible');
+  toggle.textContent = '▼ Karte ausblenden';
+
+  // Initialize Leaflet map
+  const res = stageRoutes[mapId];
+  if (!res || !res.routePoints) return;
+
+  const map = L.map(mapId, { zoomControl: true, attributionControl: false });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 17
+  }).addTo(map);
+
+  // Route polyline
+  const latlngs = res.routePoints.map(p => [p.lat, p.lon]);
+  const polyline = L.polyline(latlngs, { color: '#2563eb', weight: 3, opacity: 0.8 }).addTo(map);
+
+  // Start marker (green)
+  L.circleMarker(latlngs[0], { radius: 7, color: '#fff', weight: 2, fillColor: '#16a34a', fillOpacity: 1 })
+    .bindTooltip(res.from, { permanent: false }).addTo(map);
+
+  // End marker (red)
+  L.circleMarker(latlngs[latlngs.length - 1], { radius: 7, color: '#fff', weight: 2, fillColor: '#dc2626', fillOpacity: 1 })
+    .bindTooltip(res.to, { permanent: false }).addTo(map);
+
+  // Fit bounds with padding
+  map.fitBounds(polyline.getBounds(), { padding: [20, 20] });
+  stageMaps[mapId] = map;
+}
+
+function setStatus(msg) { document.getElementById('status').textContent = msg; }
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+</script>
+</body>
+</html>
